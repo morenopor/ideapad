@@ -39,7 +39,9 @@ _Last verified: 2026-10-07_
 - **Node.js:** 22.22.1 and npm 9.2.0 — both from the Ubuntu archive (`nodejs`, `npm`); NodeSource is **not** used
 - **Gemini CLI:** 0.63.0 — global npm package `@google/gemini-cli` in `/usr/lib/node_modules`
 - **Antigravity CLI (`agy`):** 1.3.1 in `~/.local/bin/agy` — self-updates in the background
-- **Antigravity IDE:** 1.23.2 via apt (package `antigravity`). This is the **last** version the apt repo will ever publish; 2.x is tarball-only (see below)
+- **Antigravity (agent manager):** 2.21.1 in `/opt/antigravity` (`antigravity-app`) — tarball install, see [Antigravity 2.x](#antigravity-2x)
+- **Antigravity IDE:** 2.5.5 in `/opt/antigravity-ide` (`antigravity-ide`) — tarball install. The old apt package (1.23.2, the last one that repo published) and its repo were removed
+- **Visual Studio Code:** 1.141.0 (classic snap)
 
 ### Preferred apps
 Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), section 4), adjusted for Ubuntu 26.04 — `upkeep.sh` installs anything missing:
@@ -61,11 +63,10 @@ Shell preferences live in a marked block in `~/.bashrc` (`# >>> ideapad preferen
 | File | Purpose |
 |---|---|
 | `ubuntu.sources`, `ubuntu-esm-*.sources` | Ubuntu archive + ESM |
-| `antigravity.sources` | Antigravity IDE 1.x (frozen at 1.23.2) |
 | `claude-desktop.sources` | Claude desktop app |
 | `nodesource.list.disabled` | Not used; keep disabled to avoid mixing Node builds |
 
-Release upgrades rename third-party repos to `*.list.disabled` **and** comment out their `deb` lines; `upkeep.sh` re-enables the known ones.
+Release upgrades rename third-party repos to `*.list.disabled` **and** comment out their `deb` lines; `upkeep.sh` re-enables the known ones (currently only Claude Desktop).
 
 ## Antigravity 2.x
 Google ships Antigravity 2.x on Linux only as tarballs from <https://antigravity.google/download> (pick **linux x64**). It is split into two products:
@@ -75,7 +76,7 @@ Google ships Antigravity 2.x on Linux only as tarballs from <https://antigravity
 | `Antigravity.tar.gz` (agent manager app) | `/opt/antigravity` | `antigravity-app` |
 | `Antigravity IDE.tar.gz` (editor) | `/opt/antigravity-ide` | `antigravity-ide` |
 
-To install or update: save the tarball(s) in `~/Downloads` and run `upkeep.sh`. It backs up `~/.antigravity` first (2.x does not migrate old conversations/workspaces), installs into `/opt`, fixes `chrome-sandbox`, and creates a launcher. Once 2.x is confirmed working, remove the 1.x apt package with `sudo apt remove antigravity` and delete `antigravity.sources`.
+To install or update: save the tarball(s) in `~/Downloads` and run `upkeep.sh`. It backs up `~/.antigravity` first (2.x does not migrate old conversations/workspaces), installs into `/opt`, fixes `chrome-sandbox`, and creates a launcher. If the old 1.x apt package is still around, the script purges it together with its repo and signing key once the 2.x IDE is installed. Updates are manual: download the new tarball and re-run the script.
 
 ## Maintenance
 **One command updates and cleans everything:**
@@ -89,7 +90,7 @@ What it does (idempotent — safe to re-run):
 2. `apt full-upgrade`, `snap refresh`, `npm update -g`.
 3. Purges old kernels from previous releases (never the running one), lets `autoremove` drop obsolete libraries, `autoclean`.
 4. Installs any missing [preferred apps](#preferred-apps), swaps obsolete tools for their replacements, moves VS Code to the snap, and sets `micro` as the default editor.
-5. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged).
+5. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged) and removes the old 1.x apt package and repo.
 6. Prints a **SUMMARY** block: versions, pending upgrades, whether a reboot is needed, apt sources, and packages with no repo.
 
 Notes:
