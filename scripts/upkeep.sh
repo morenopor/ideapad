@@ -16,7 +16,7 @@ sudo -v || exit 1
 
 say "APT sources"
 # Ubuntu disables third-party repos on release upgrades: re-enable known ones.
-for name in antigravity claude-desktop; do
+for name in claude-desktop; do
   if [ -f "$SL/$name.list.disabled" ]; then
     sudo mv "$SL/$name.list.disabled" "$SL/$name.list"
     sudo sed -i 's/^#\s*deb /deb /' "$SL/$name.list"
@@ -126,6 +126,11 @@ AG=$(find ~/Downloads -maxdepth 1 -iname 'antigravity*.tar.gz' ! -iname '*ide*' 
 IDE=$(find ~/Downloads -maxdepth 1 -iname 'antigravity*ide*.tar.gz' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 if [ -n "$AG" ]; then install_tarball "$AG" /opt/antigravity antigravity-app "Antigravity"; else echo "no Antigravity.tar.gz in ~/Downloads"; fi
 if [ -n "$IDE" ]; then install_tarball "$IDE" /opt/antigravity-ide antigravity-ide "Antigravity IDE"; else echo "no 'Antigravity IDE.tar.gz' in ~/Downloads"; fi
+# Antigravity 1.x came from an apt repo that stopped at 1.23.2; once the 2.x IDE is in /opt, drop the old package and its repo.
+if [ -x /opt/antigravity-ide/antigravity-ide ] && dpkg-query -W -f='${Status}' antigravity 2>/dev/null | grep -q "ok installed"; then
+  sudo apt -y purge antigravity
+fi
+[ -x /opt/antigravity-ide/antigravity-ide ] && sudo rm -f "$SL"/antigravity.* /etc/apt/keyrings/antigravity-repo-key.gpg
 command -v agy >/dev/null || echo "agy CLI missing: curl -fsSL https://antigravity.google/cli/install.sh | bash"
 
 ver(){ # Antigravity product version: IDE -> product.json ideVersion; agent app -> package.json inside app.asar
@@ -139,7 +144,6 @@ say "SUMMARY"
 lsb_release -ds; uname -r
 echo "gemini:          $(gemini --version 2>/dev/null)"
 echo "agy:             $(agy --version 2>/dev/null | head -1)"
-echo "antigravity apt: $(dpkg-query -W -f='${Version}' antigravity 2>/dev/null || echo n/a)"
 echo "antigravity 2.x: $(ver /opt/antigravity)"
 echo "antigravity-ide: $(ver /opt/antigravity-ide)"
 echo "node: $(node -v 2>/dev/null)  npm: $(npm -v 2>/dev/null)"
