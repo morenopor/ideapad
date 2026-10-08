@@ -3,16 +3,29 @@
 # Safe to re-run: each step is idempotent and skips itself when there is nothing to do.
 #
 # Usage:
-#   bash scripts/upkeep.sh 2>&1 | tee ~/upkeep-$(date +%F).log
+#   bash scripts/upkeep.sh           # update + clean + summary (log saved to ~/.local/state/upkeep/, last 10 kept)
+#   bash scripts/upkeep.sh --check   # summary only, changes nothing
 #
 # Optional: drop the Antigravity tarballs in ~/Downloads before running
 #   - Antigravity.tar.gz      (Antigravity 2.x agent app)  -> /opt/antigravity      (cmd: antigravity-app)
 #   - Antigravity IDE.tar.gz  (Antigravity IDE 2.x)        -> /opt/antigravity-ide  (cmd: antigravity-ide)
 # Always pick the linux x64 build (this laptop is amd64). A tarball is only reinstalled if it changed.
 set -u
+CHECK=0; [ "${1:-}" = "--check" ] && CHECK=1
 SL=/etc/apt/sources.list.d
+STATE=~/.local/state/upkeep; mkdir -p "$STATE"
+LOG="$STATE/upkeep-$(date +%F-%H%M%S).log"
+exec > >(tee -a "$LOG") 2>&1
+ls -1t "$STATE"/upkeep-*.log 2>/dev/null | tail -n +11 | xargs -r rm -f
 say(){ echo -e "\n=== $* ==="; }
+FAILED=()
+run(){ "$@" || { FAILED+=("$*"); echo "!! FAILED: $*"; }; }
+
+if [ "$CHECK" -eq 0 ]; then
 sudo -v || exit 1
+# Keep the sudo ticket alive during long runs; stops when the script exits.
+( while kill -0 $$ 2>/dev/null; do sudo -n true; sleep 50; done ) 2>/dev/null &
+KEEPALIVE=$!; trap 'kill "$KEEPALIVE" 2>/dev/null' EXIT
 
 say "APT sources"
 # Ubuntu disables third-party repos on release upgrades: re-enable known ones.
@@ -44,21 +57,26 @@ for f in "$SL"/*.sources; do
 done
 
 say "System update"
-sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt -y full-upgrade
-sudo snap refresh
-command -v npm >/dev/null && sudo npm update -g
+run sudo apt update
+run sudo DEBIAN_FRONTEND=noninteractive apt -y full-upgrade
+run sudo snap refresh
+command -v npm >/dev/null && run sudo npm update -g
 # Gemini CLI: global npm package (kept current by the npm update above).
 command -v gemini >/dev/null || sudo npm install -g @google/gemini-cli
 # Codex CLI: user-level standalone install (~/.codex/packages/standalone, command in ~/.local/bin). It does not
-# self-update, so ask it to; never install the npm package on top of it.
+# self-update, so ask it to (at most once a week: it re-downloads even when current); never install the npm package on top of it.
 if command -v codex >/dev/null; then
-  codex update </dev/null || echo "codex update failed; re-run the standalone installer (curl -fsSL https://chatgpt.com/codex/install.sh | sh)"
+  if [ -z "$(find "$STATE/codex-update.stamp" -mtime -7 2>/dev/null)" ]; then
+    if codex update </dev/null; then touch "$STATE/codex-update.stamp"
+    else FAILED+=("codex update"); echo "!! codex update failed; re-run: curl -fsSL https://chatgpt.com/codex/install.sh | sh"; fi
+  else echo "codex update skipped (ran in the last 7 days)"; fi
 else
   echo "Codex CLI missing: reinstall with: curl -fsSL https://chatgpt.com/codex/install.sh | sh"
 fi
 # Backups left by modernize-sources / de-duplication are no longer needed once apt update has succeeded.
 sudo rm -f "$SL"/*.list.bak "$SL"/*.dup.bak
+# NodeSource is not used (Node comes from the Ubuntu archive).
+sudo rm -f "$SL"/nodesource.*
 
 say "Cleanup"
 # Old kernels left from previous releases (no longer in any repo); never touches the running one.
@@ -67,8 +85,15 @@ OLDK=$(apt list '?narrow(?installed, ?obsolete, ?name(^linux-))' 2>/dev/null | c
 # Obsolete libraries / transitional packages: mark as auto so autoremove drops them only if nothing needs them.
 OLDLIB=$(apt list '?narrow(?installed, ?obsolete, ?or(?name(^lib), ?name(^policykit-1$)))' 2>/dev/null | cut -d/ -f1 | grep -v Listing)
 [ -n "$OLDLIB" ] && sudo apt-mark auto $OLDLIB >/dev/null
-sudo apt -y autoremove --purge
-sudo apt -y autoclean
+run sudo apt -y autoremove --purge
+run sudo apt -y autoclean
+# Snap keeps old revisions around: keep 2 per snap and drop the disabled ones.
+sudo snap set system refresh.retain=2
+snap list --all 2>/dev/null | awk '/disabled/{print $1, $3}' | while read -r n r; do sudo snap remove "$n" --revision="$r"; done
+# System journal: keep 4 weeks.
+run sudo journalctl --vacuum-time=4weeks
+# Antigravity data backups made before tarball installs: keep the 2 newest.
+ls -1dt ~/antigravity-backup-* 2>/dev/null | tail -n +3 | xargs -r rm -rf
 
 say "Preferred apps (same toolset as the iMac)"
 # CLI toolset. Ubuntu dropped exa/neofetch/tldr: eza, fastfetch and tealdeer replace them.
@@ -112,7 +137,8 @@ systemctl is-active --quiet avahi-daemon || sudo systemctl enable --now avahi-da
 # LocalSend: user-level Flatpak from Flathub (never system-wide).
 flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 flatpak info --user org.localsend.localsend_app >/dev/null 2>&1 || flatpak install --user -y flathub org.localsend.localsend_app
-flatpak update --user -y --noninteractive
+run flatpak update --user -y --noninteractive
+flatpak uninstall --user --unused -y --noninteractive
 # GSConnect: user-scoped GNOME Shell extension (talks to KDE Connect on the iPhone). Do NOT install the kdeconnect desktop package.
 GSC=gsconnect@andyholmes.github.io
 if ! gnome-extensions info "$GSC" >/dev/null 2>&1; then
@@ -192,6 +218,10 @@ fi
 [ -x /opt/antigravity-ide/antigravity-ide ] && sudo rm -f "$SL"/antigravity.* /etc/apt/keyrings/antigravity-repo-key.gpg
 command -v agy >/dev/null || echo "agy CLI missing: curl -fsSL https://antigravity.google/cli/install.sh | bash"
 
+say "Firmware (report only)"
+command -v fwupdmgr >/dev/null && { fwupdmgr refresh --force >/dev/null 2>&1 || echo "fwupd metadata refresh failed (offline?)"; }
+fi  # end of changes (skipped with --check)
+
 ver(){ # Antigravity product version: IDE -> product.json ideVersion; agent app -> package.json inside app.asar
   local d="$1" v=""
   v=$(grep -oE '"ideVersion": *"[^"]+"' "$d/resources/app/product.json" 2>/dev/null | cut -d'"' -f4)
@@ -214,7 +244,9 @@ echo "gsconnect:       $(gnome-extensions info gsconnect@andyholmes.github.io 2>
 echo "uxplay:          $(dpkg-query -W -f='${Version}' uxplay 2>/dev/null)"
 echo "avahi-daemon:    $(dpkg-query -W -f='${Version}' avahi-daemon 2>/dev/null) ($(systemctl is-active avahi-daemon 2>/dev/null))"
 echo "chatgpt:         $(p=$(dpkg -S /usr/bin/chatgpt 2>/dev/null | cut -d: -f1); [ -n "$p" ] && dpkg-query -W -f='${Version}' "$p")"
-echo "ufw:             $(sudo ufw status 2>/dev/null | head -1)"
+echo "ufw:             $(sudo -n ufw status 2>/dev/null | head -1 || true)"
+FW=$(fwupdmgr get-updates --json 2>/dev/null | jq -r '.Devices[]? | select(.Releases) | "\(.Name) \(.Version) -> \(.Releases[0].Version)"' 2>/dev/null)
+echo "firmware:        ${FW:-no updates reported by LVFS}"
 echo "nvidia: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo n/a)"
 echo "pending upgrades: $(apt list --upgradable 2>/dev/null | grep -c upgradable) (phased updates are normal)"
 echo "reboot required: $([ -f /var/run/reboot-required ] && echo YES || echo no)"
@@ -222,3 +254,5 @@ echo "-- apt sources:"; ls "$SL"
 echo "-- installed packages with no repo (review manually; ChatGPT is never listed here):"
 CGP=$(dpkg -S /usr/bin/chatgpt 2>/dev/null | cut -d: -f1)
 apt list '?narrow(?installed, ?obsolete)' 2>/dev/null | grep -v Listing | grep -v "^${CGP:-__none__}/"
+echo "-- log: $LOG"
+if [ "${#FAILED[@]}" -gt 0 ]; then echo "-- FAILED steps:"; printf '   %s\n' "${FAILED[@]}"; else echo "-- all steps OK"; fi
