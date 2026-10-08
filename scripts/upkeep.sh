@@ -328,7 +328,8 @@ query uxplay dpkg-query -W '-f=${Version}\n' uxplay
 query avahi bash -c 'v=$(dpkg-query -W -f="\${Version}" avahi-daemon) && echo "$v ($(systemctl is-active avahi-daemon 2>/dev/null))"'
 CGP=$(dpkg -S /usr/bin/chatgpt 2>/dev/null | cut -d: -f1)
 if [ -n "$CGP" ]; then query chatgpt dpkg-query -W '-f=${Version}\n' "$CGP"; else printf '%-17s %s\n' 'chatgpt:' 'UNKNOWN (package not found)'; fi
-query ufw bash -o pipefail -c 'sudo -n ufw status | head -1'
+# Without a sudo ticket (--check) fall back to the boot config, which needs no root.
+query ufw bash -o pipefail -c 'sudo -n ufw status 2>/dev/null | head -1 || sed -n "s/^ENABLED=//p" /etc/ufw/ufw.conf | sed "s/^yes$/enabled (ufw.conf)/;s/^no$/disabled (ufw.conf)/" | grep .'
 query secure-boot mokutil --sb-state
 FW_JSON=$(timeout 30 fwupdmgr get-updates --json 2>/dev/null); rc=$?
 if [ "$rc" -eq 2 ]; then printf '%-17s %s\n' 'firmware:' 'no updates available'
