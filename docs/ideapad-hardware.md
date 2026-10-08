@@ -41,6 +41,20 @@ _Last verified: 2026-10-07_
 - **Antigravity CLI (`agy`):** 1.3.1 in `~/.local/bin/agy` — self-updates in the background
 - **Antigravity IDE:** 1.23.2 via apt (package `antigravity`). This is the **last** version the apt repo will ever publish; 2.x is tarball-only (see below)
 
+### Preferred apps
+Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), section 4), adjusted for Ubuntu 26.04 — `upkeep.sh` installs anything missing:
+
+| Purpose | Tools |
+|---|---|
+| CLI editor (default `EDITOR`, `editor` alternative, git) | `micro` |
+| Files / disk | `eza` (replaces `exa`; aliased as `ls`/`ll`/`la`), `ncdu`, `tree` |
+| Monitoring / system info | `btop`, `htop`, `fastfetch` (replaces `neofetch`, which Ubuntu dropped; aliased as `neofetch`) |
+| Networking | `nmap`, `whois`, `netcat-openbsd`, `lynx` |
+| Utilities | `tealdeer` (provides `tldr`; replaces the dropped `tldr`/`tldr-hs`), `jq`, `git`, `curl`, `wget`, `rsync` |
+| Markdown / code editor | Visual Studio Code as the **classic snap** (`snap install --classic code`), not the old `.deb` |
+
+Shell preferences live in a marked block in `~/.bashrc` (`# >>> ideapad preferences >>>`). Ubuntu Studio packages and `easyeffects` from the iMac profile are **not** installed here (this laptop runs stock GNOME).
+
 ### APT sources (`/etc/apt/sources.list.d/`)
 | File | Purpose |
 |---|---|
@@ -73,9 +87,10 @@ What it does (idempotent — safe to re-run):
 1. Re-enables third-party apt repos disabled by a release upgrade, removes leftover PPAs for older releases, migrates `.list` files to deb822 `.sources`, and de-duplicates repeated entries.
 2. `apt full-upgrade`, `snap refresh`, `npm update -g`.
 3. Purges old kernels from previous releases (never the running one), lets `autoremove` drop obsolete libraries, `autoclean`.
-4. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged).
-5. Prints a **SUMMARY** block: versions, pending upgrades, whether a reboot is needed, apt sources, and packages with no repo.
+4. Installs any missing [preferred apps](#preferred-apps), swaps obsolete tools for their replacements, moves VS Code to the snap, and sets `micro` as the default editor.
+5. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged).
+6. Prints a **SUMMARY** block: versions, pending upgrades, whether a reboot is needed, apt sources, and packages with no repo.
 
 Notes:
 - "Not upgrading yet due to phasing" is normal: Ubuntu rolls some updates out gradually.
-- Packages listed under "no repo" need a human decision. Known ones as of 2026-10-07: `code` 1.96.4 (no Microsoft repo configured), `teamviewer`, `terraform` (hashicorp repo disabled), `neofetch`, `tldr`.
+- Packages listed under "no repo" need a human decision. Known ones as of 2026-10-07: `teamviewer`, `terraform` (hashicorp repo disabled). (`code`, `neofetch` and `tldr` are handled by the preferred-apps step.)
