@@ -16,7 +16,7 @@ sudo -v || exit 1
 
 say "APT sources"
 # Ubuntu disables third-party repos on release upgrades: re-enable known ones.
-for name in claude-desktop; do
+for name in claude-desktop chatgpt; do
   if [ -f "$SL/$name.list.disabled" ]; then
     sudo mv "$SL/$name.list.disabled" "$SL/$name.list"
     sudo sed -i 's/^#\s*deb /deb /' "$SL/$name.list"
@@ -48,6 +48,9 @@ sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt -y full-upgrade
 sudo snap refresh
 command -v npm >/dev/null && sudo npm update -g
+# AI CLIs installed as global npm packages (kept current by the npm update above).
+command -v gemini >/dev/null || sudo npm install -g @google/gemini-cli
+command -v codex >/dev/null || sudo npm install -g @openai/codex
 # Backups left by modernize-sources / de-duplication are no longer needed once apt update has succeeded.
 sudo rm -f "$SL"/*.list.bak "$SL"/*.dup.bak
 
@@ -113,7 +116,7 @@ if ! gnome-extensions info "$GSC" >/dev/null 2>&1; then
     || echo "could not reach GNOME Shell (run this from a desktop session)"
 fi
 dpkg-query -W -f='${Status}' kdeconnect 2>/dev/null | grep -q "ok installed" && echo "WARNING: kdeconnect package is installed and conflicts with GSConnect"
-# ChatGPT desktop: official amd64 .deb (no apt repo). Installs/updates from ~/Downloads when a newer .deb is there.
+# ChatGPT desktop: official amd64 .deb (it adds chatgpt.sources, so routine updates come via apt). Reinstalls from ~/Downloads if missing or older.
 CGDEB=$(find ~/Downloads -maxdepth 1 -iname 'chatgpt*_amd64.deb' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 CGPKG=$(dpkg -S /usr/bin/chatgpt 2>/dev/null | cut -d: -f1)
 if [ -n "$CGDEB" ]; then
@@ -194,6 +197,7 @@ say "SUMMARY"
 lsb_release -ds; uname -r
 echo "gemini:          $(gemini --version 2>/dev/null)"
 echo "agy:             $(agy --version 2>/dev/null | head -1)"
+echo "codex:           $(codex --version 2>/dev/null | head -1) [$(readlink -f "$(command -v codex)" 2>/dev/null)]"
 echo "antigravity 2.x: $(ver /opt/antigravity)"
 echo "antigravity-ide: $(ver /opt/antigravity-ide)"
 echo "node: $(node -v 2>/dev/null)  npm: $(npm -v 2>/dev/null)"
@@ -209,6 +213,6 @@ echo "nvidia: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/d
 echo "pending upgrades: $(apt list --upgradable 2>/dev/null | grep -c upgradable) (phased updates are normal)"
 echo "reboot required: $([ -f /var/run/reboot-required ] && echo YES || echo no)"
 echo "-- apt sources:"; ls "$SL"
-echo "-- installed packages with no repo (review manually; the ChatGPT .deb is expected and not listed):"
+echo "-- installed packages with no repo (review manually; ChatGPT is never listed here):"
 CGP=$(dpkg -S /usr/bin/chatgpt 2>/dev/null | cut -d: -f1)
 apt list '?narrow(?installed, ?obsolete)' 2>/dev/null | grep -v Listing | grep -v "^${CGP:-__none__}/"
