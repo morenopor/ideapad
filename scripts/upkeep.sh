@@ -48,6 +48,8 @@ sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt -y full-upgrade
 sudo snap refresh
 command -v npm >/dev/null && sudo npm update -g
+# Backups left by modernize-sources / de-duplication are no longer needed once apt update has succeeded.
+sudo rm -f "$SL"/*.list.bak "$SL"/*.dup.bak
 
 say "Cleanup"
 # Old kernels left from previous releases (no longer in any repo); never touches the running one.
@@ -126,7 +128,13 @@ if [ -n "$AG" ]; then install_tarball "$AG" /opt/antigravity antigravity-app "An
 if [ -n "$IDE" ]; then install_tarball "$IDE" /opt/antigravity-ide antigravity-ide "Antigravity IDE"; else echo "no 'Antigravity IDE.tar.gz' in ~/Downloads"; fi
 command -v agy >/dev/null || echo "agy CLI missing: curl -fsSL https://antigravity.google/cli/install.sh | bash"
 
-ver(){ local v; v=$(grep -m1 '"version"' "$1/resources/app/package.json" 2>/dev/null | sed 's/[^0-9.]//g'); echo "${v:-n/a}"; }
+ver(){ # Antigravity product version: IDE -> product.json ideVersion; agent app -> package.json inside app.asar
+  local d="$1" v=""
+  v=$(grep -oE '"ideVersion": *"[^"]+"' "$d/resources/app/product.json" 2>/dev/null | cut -d'"' -f4)
+  [ -z "$v" ] && [ -f "$d/resources/app.asar" ] && v=$(node -e 'const fs=require("fs"),b=fs.readFileSync(process.argv[1]),h=JSON.parse(b.slice(16,16+b.readUInt32LE(12)).toString()),e=h.files["package.json"],o=8+b.readUInt32LE(4)+Number(e.offset);console.log(JSON.parse(b.slice(o,o+e.size)).version)' "$d/resources/app.asar" 2>/dev/null)
+  [ -z "$v" ] && v=$(grep -m1 -oE '"version": *"[^"]+"' "$d/resources/app/package.json" 2>/dev/null | cut -d'"' -f4)
+  echo "${v:-n/a}"
+}
 say "SUMMARY"
 lsb_release -ds; uname -r
 echo "gemini:          $(gemini --version 2>/dev/null)"
@@ -135,7 +143,7 @@ echo "antigravity apt: $(dpkg-query -W -f='${Version}' antigravity 2>/dev/null |
 echo "antigravity 2.x: $(ver /opt/antigravity)"
 echo "antigravity-ide: $(ver /opt/antigravity-ide)"
 echo "node: $(node -v 2>/dev/null)  npm: $(npm -v 2>/dev/null)"
-echo "vscode (snap):   $(snap list code 2>/dev/null | awk 'NR==2{print $2}')"
+echo "vscode (snap):   $(code --version 2>/dev/null | head -1)"
 echo "editor:          $(readlink -f /usr/bin/editor)"
 echo "nvidia: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo n/a)"
 echo "pending upgrades: $(apt list --upgradable 2>/dev/null | grep -c upgradable) (phased updates are normal)"
