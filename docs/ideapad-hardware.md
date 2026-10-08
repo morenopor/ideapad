@@ -19,6 +19,7 @@ This document captures the key hardware and software details for the Lenovo Idea
 
 ## Memory
 - **Installed Modules:** 4 GB + 16 GB (total 20 GB; `free -h` reports ~18 GiB usable)
+- **Swap:** 8 GB swap file `/swapfile` (in `/etc/fstab`); enlarged from 2 GB on 2026-10-08 after an out-of-memory logout (see [Maintenance](#maintenance))
 
 ## Graphics
 - **Integrated GPU:** Intel UHD Graphics 620 (i915 driver)
