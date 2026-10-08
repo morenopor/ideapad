@@ -42,6 +42,7 @@ _Last verified: 2026-10-07_
 - **Antigravity (agent manager):** 2.21.1 in `/opt/antigravity` (`antigravity-app`) — tarball install, see [Antigravity 2.x](#antigravity-2x)
 - **Antigravity IDE:** 2.5.5 in `/opt/antigravity-ide` (`antigravity-ide`) — tarball install. The old apt package (1.23.2, the last one that repo published) and its repo were removed
 - **Visual Studio Code:** 1.141.0 (classic snap)
+- **ChatGPT desktop:** 26.1002.52244 — official amd64 `.deb` (no apt repo), executable `/usr/bin/chatgpt`
 
 ### Preferred apps
 Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), section 4), adjusted for Ubuntu 26.04 — `upkeep.sh` installs anything missing:
@@ -58,6 +59,26 @@ Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), s
 Shell preferences live in a marked block in `~/.bashrc` (`# >>> ideapad preferences >>>`). Ubuntu Studio packages and `easyeffects` from the iMac profile are **not** installed here (this laptop runs stock GNOME).
 
 **No longer used** (removed by `upkeep.sh`, together with their repos): `teamviewer`, `terraform`.
+
+### iPhone / LAN integration
+_Verified 2026-10-07._ `upkeep.sh` keeps these installed using their original install method:
+
+| Component | Version | Install method | Purpose |
+|---|---|---|---|
+| LocalSend | 1.18.2 | **User-level** Flatpak from Flathub (`org.localsend.localsend_app`) | Send files and text between Ubuntu and the iPhone over the LAN |
+| GSConnect | _to verify_ | **User-scoped** GNOME Shell extension (`gsconnect@andyholmes.github.io`) | Integrates with KDE Connect on the iPhone. Do **not** install the `kdeconnect` desktop package alongside it |
+| UxPlay | 1.73.2-1 | APT (`uxplay`) | AirPlay screen and audio mirroring from the iPhone |
+| avahi-daemon | 0.8-18ubuntu1.1 | APT, service active | mDNS / local service discovery (needed by UxPlay) |
+
+**Custom AirPlay launcher** (created by `upkeep.sh` only if missing; existing files are never overwritten):
+- Script: `~/.local/bin/gabe-iphone-airplay`
+- Desktop entry: `~/.local/share/applications/gabe-iphone-airplay.desktop` — app name **iPhone AirPlay**
+- Receiver name: **Gabe Lenovo**
+- Command: `uxplay -n 'Gabe Lenovo' -p 35000 -pin -avdec` — PIN authentication, software video decoding, fixed TCP/UDP ports 35000–35002
+
+**Firewall:** UFW is inactive; no rules were added. If UFW is ever enabled, allow TCP/UDP 35000–35002 and mDNS (UDP 5353) from the LAN for AirPlay, plus LocalSend (TCP/UDP 53317) and GSConnect/KDE Connect (TCP/UDP 1714–1764).
+
+**Still unverified:** GSConnect version and enabled state (the `upkeep.sh` summary prints both), and actual iPhone pairing / compatibility with iOS 27.2 beta 3.
 
 ### APT sources (`/etc/apt/sources.list.d/`)
 | File | Purpose |
@@ -90,8 +111,9 @@ What it does (idempotent — safe to re-run):
 2. `apt full-upgrade`, `snap refresh`, `npm update -g`.
 3. Purges old kernels from previous releases (never the running one), lets `autoremove` drop obsolete libraries, `autoclean`.
 4. Installs any missing [preferred apps](#preferred-apps), swaps obsolete tools for their replacements, moves VS Code to the snap, and sets `micro` as the default editor.
+   It also keeps the [iPhone / LAN integration](#iphone--lan-integration) baseline: installs missing `uxplay`/`avahi-daemon`/`flatpak`, keeps avahi running, installs/updates LocalSend as a user Flatpak, asks GNOME Shell to install GSConnect if it is missing, installs or upgrades ChatGPT desktop from a newer official `.deb` in `~/Downloads`, and recreates the AirPlay launcher if it was deleted.
 5. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged) and removes the old 1.x apt package and repo.
-6. Prints a **SUMMARY** block: versions, pending upgrades, whether a reboot is needed, apt sources, and packages with no repo.
+6. Prints a **SUMMARY** block: versions (including LocalSend, GSConnect version/state, UxPlay, avahi, ChatGPT, UFW status), pending upgrades, whether a reboot is needed, apt sources, and packages with no repo (the ChatGPT `.deb` is expected and filtered out).
 
 Notes:
 - "Not upgrading yet due to phasing" is normal: Ubuntu rolls some updates out gradually.
