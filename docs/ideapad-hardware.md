@@ -42,7 +42,8 @@ _Last verified: 2026-10-07_
 - **Antigravity (agent manager):** 2.21.1 in `/opt/antigravity` (`antigravity-app`) — tarball install, see [Antigravity 2.x](#antigravity-2x)
 - **Antigravity IDE:** 2.5.5 in `/opt/antigravity-ide` (`antigravity-ide`) — tarball install. The old apt package (1.23.2, the last one that repo published) and its repo were removed
 - **Visual Studio Code:** 1.141.0 (classic snap)
-- **ChatGPT desktop:** 26.1002.52244 — official amd64 `.deb` (no apt repo), executable `/usr/bin/chatgpt`
+- **ChatGPT desktop:** 26.1002.52244 — installed from the official amd64 `.deb`, which registers its own apt repo (`chatgpt.sources`), so it updates with apt; executable `/usr/bin/chatgpt`
+- **Codex CLI:** installed (`codex`). `upkeep.sh` treats it like Gemini CLI — a global npm package (`@openai/codex`) kept current by `npm update -g`; the summary prints its version and real install path (verify the path is under `/usr/lib/node_modules`)
 
 ### Preferred apps
 Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), section 4), adjusted for Ubuntu 26.04 — `upkeep.sh` installs anything missing:
@@ -66,7 +67,7 @@ _Verified 2026-10-07._ `upkeep.sh` keeps these installed using their original in
 | Component | Version | Install method | Purpose |
 |---|---|---|---|
 | LocalSend | 1.18.2 | **User-level** Flatpak from Flathub (`org.localsend.localsend_app`) | Send files and text between Ubuntu and the iPhone over the LAN |
-| GSConnect | _to verify_ | **User-scoped** GNOME Shell extension (`gsconnect@andyholmes.github.io`) | Integrates with KDE Connect on the iPhone. Do **not** install the `kdeconnect` desktop package alongside it |
+| GSConnect | 73 (enabled, active) | **User-scoped** GNOME Shell extension (`gsconnect@andyholmes.github.io`) | Integrates with KDE Connect on the iPhone. Do **not** install the `kdeconnect` desktop package alongside it |
 | UxPlay | 1.73.2-1 | APT (`uxplay`) | AirPlay screen and audio mirroring from the iPhone |
 | avahi-daemon | 0.8-18ubuntu1.1 | APT, service active | mDNS / local service discovery (needed by UxPlay) |
 
@@ -78,16 +79,17 @@ _Verified 2026-10-07._ `upkeep.sh` keeps these installed using their original in
 
 **Firewall:** UFW is inactive; no rules were added. If UFW is ever enabled, allow TCP/UDP 35000–35002 and mDNS (UDP 5353) from the LAN for AirPlay, plus LocalSend (TCP/UDP 53317) and GSConnect/KDE Connect (TCP/UDP 1714–1764).
 
-**Still unverified:** GSConnect version and enabled state (the `upkeep.sh` summary prints both), and actual iPhone pairing / compatibility with iOS 27.2 beta 3.
+**Still unverified:** actual iPhone pairing and compatibility with iOS 27.2 beta 3. (GSConnect 73 confirmed enabled and active on 2026-10-07.)
 
 ### APT sources (`/etc/apt/sources.list.d/`)
 | File | Purpose |
 |---|---|
 | `ubuntu.sources`, `ubuntu-esm-*.sources` | Ubuntu archive + ESM |
 | `claude-desktop.sources` | Claude desktop app |
+| `chatgpt.sources` | ChatGPT desktop (added by its official `.deb`) |
 | `nodesource.list.disabled` | Not used; keep disabled to avoid mixing Node builds |
 
-Release upgrades rename third-party repos to `*.list.disabled` **and** comment out their `deb` lines; `upkeep.sh` re-enables the known ones (currently only Claude Desktop).
+Release upgrades rename third-party repos to `*.list.disabled` **and** comment out their `deb` lines; `upkeep.sh` re-enables the known ones (currently Claude Desktop and ChatGPT).
 
 ## Antigravity 2.x
 Google ships Antigravity 2.x on Linux only as tarballs from <https://antigravity.google/download> (pick **linux x64**). It is split into two products:
@@ -108,12 +110,12 @@ bash scripts/upkeep.sh 2>&1 | tee ~/upkeep-$(date +%F).log
 
 What it does (idempotent — safe to re-run):
 1. Re-enables third-party apt repos disabled by a release upgrade, removes leftover PPAs for older releases, migrates `.list` files to deb822 `.sources`, and de-duplicates repeated entries.
-2. `apt full-upgrade`, `snap refresh`, `npm update -g`.
+2. `apt full-upgrade`, `snap refresh`, `npm update -g` (keeps Gemini CLI and Codex CLI current, and reinstalls either one if it is missing).
 3. Purges old kernels from previous releases (never the running one), lets `autoremove` drop obsolete libraries, `autoclean`.
 4. Installs any missing [preferred apps](#preferred-apps), swaps obsolete tools for their replacements, moves VS Code to the snap, and sets `micro` as the default editor.
-   It also keeps the [iPhone / LAN integration](#iphone--lan-integration) baseline: installs missing `uxplay`/`avahi-daemon`/`flatpak`, keeps avahi running, installs/updates LocalSend as a user Flatpak, asks GNOME Shell to install GSConnect if it is missing, installs or upgrades ChatGPT desktop from a newer official `.deb` in `~/Downloads`, and recreates the AirPlay launcher if it was deleted.
+   It also keeps the [iPhone / LAN integration](#iphone--lan-integration) baseline: installs missing `uxplay`/`avahi-daemon`/`flatpak`, keeps avahi running, installs/updates LocalSend as a user Flatpak, asks GNOME Shell to install GSConnect if it is missing, reinstalls ChatGPT desktop from the official `.deb` in `~/Downloads` if it is missing (or newer than the installed one; normal updates come through its apt repo), and recreates the AirPlay launcher if it was deleted.
 5. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged) and removes the old 1.x apt package and repo.
-6. Prints a **SUMMARY** block: versions (including LocalSend, GSConnect version/state, UxPlay, avahi, ChatGPT, UFW status), pending upgrades, whether a reboot is needed, apt sources, and packages with no repo (the ChatGPT `.deb` is expected and filtered out).
+6. Prints a **SUMMARY** block: versions (including Codex CLI, LocalSend, GSConnect version/state, UxPlay, avahi, ChatGPT, UFW status), pending upgrades, whether a reboot is needed, apt sources, and packages with no repo (ChatGPT is filtered out).
 
 Notes:
 - "Not upgrading yet due to phasing" is normal: Ubuntu rolls some updates out gradually.
