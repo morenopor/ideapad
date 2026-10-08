@@ -51,13 +51,13 @@ Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), s
 | Purpose | Tools |
 |---|---|
 | CLI editor (default `EDITOR`, `editor` alternative, git) | `micro` |
-| Files / disk | `eza` (replaces `exa`; aliased as `ls`/`ll`/`la`), `ncdu`, `tree` |
+| Files / disk | `eza` (replaces `exa`; aliased as `ll`/`la` — `ls` stays GNU `ls`, because an eza alias broke `ls -lt`), `ncdu`, `tree` |
 | Monitoring / system info | `btop`, `htop`, `fastfetch` (replaces `neofetch`, which Ubuntu dropped; aliased as `neofetch`) |
 | Networking | `nmap`, `whois`, `netcat-openbsd`, `lynx` |
 | Utilities | `tealdeer` (provides `tldr`; replaces the dropped `tldr`/`tldr-hs`), `jq`, `git`, `curl`, `wget`, `rsync` |
 | Markdown / code editor | Visual Studio Code as the **classic snap** (`snap install --classic code`), not the old `.deb` |
 
-Shell preferences live in a marked block in `~/.bashrc` (`# >>> ideapad preferences >>>`). Ubuntu Studio packages and `easyeffects` from the iMac profile are **not** installed here (this laptop runs stock GNOME).
+Shell preferences live in a marked block in `~/.bashrc` (`# >>> ideapad preferences >>>`); `upkeep.sh` rewrites that block when it differs from the script (backup in `~/.bashrc.upkeep-bak`). Ubuntu Studio packages and `easyeffects` from the iMac profile are **not** installed here (this laptop runs stock GNOME).
 
 **No longer used** (removed by `upkeep.sh`, together with their repos): `teamviewer`, `terraform`.
 
@@ -106,12 +106,14 @@ To install or update: save the tarball(s) in `~/Downloads` and run `upkeep.sh`. 
 ```bash
 bash scripts/upkeep.sh           # update + clean + summary
 bash scripts/upkeep.sh --check   # summary only, changes nothing (use this first when diagnosing)
+bash scripts/upkeep.sh --force   # skip the low-memory guard
 ```
 
 Every maintenance run is logged automatically to `~/.local/state/upkeep/upkeep-<date-time>-<pid>.log` (private: files 600, directory 700; the 10 newest are kept), so there is no need to pipe through `tee`. `--check` creates no log or state at all. Run it as your normal user from the GNOME desktop session (it refuses to run as root, and the GSConnect step talks to GNOME Shell).
 
 Behaviour and exit codes:
 - Unknown options are rejected (exit 2); `--help` prints usage. A second run while one is active is refused (exit 3, `flock`).
+- **Memory guard (exit 4):** the run refuses to start if less than 2 GB of RAM is available or memory pressure (`/proc/pressure/memory`, avg10) is above 20%, and lists the top memory users. Close apps or pass `--force`. Reason: on 2026-10-08 the desktop session reached ~17 of 18 GB (terminal tabs running agents ~7 GB, Firefox 3.4 GB, gnome-shell 3 GB) with only 2 GB of swap, and `systemd-oomd` killed gnome-shell — which logged the user out and killed the terminal running `upkeep.sh` mid `apt update`. It looks like a reboot but `journalctl -b` shows the same boot; check with `journalctl -b -u systemd-oomd`.
 - The sudo ticket is kept alive for the whole run. A step that fails does not stop the rest; failed steps are listed at the end and the script exits **1**. Exception: if `apt update` fails (`APT::Update::Error-Mode=any`, so partial index downloads count as failure) the run stops before `full-upgrade` and cleanup.
 - Summary queries that fail print `UNKNOWN (…)` instead of an empty value; they are diagnostics and do not change the exit code. The summary also shows the Secure Boot state (`mokutil --sb-state`).
 
@@ -123,7 +125,7 @@ What it does (idempotent — safe to re-run):
    It also keeps the [iPhone / LAN integration](#iphone--lan-integration) baseline: installs missing `uxplay`/`avahi-daemon`/`flatpak`, keeps avahi running, installs/updates LocalSend as a user Flatpak, asks GNOME Shell to install GSConnect if it is missing, reinstalls ChatGPT desktop from the official `.deb` in `~/Downloads` if it is missing (or newer than the installed one; normal updates come through its apt repo), and recreates the AirPlay launcher if it was deleted.
 5. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged) and removes the old 1.x apt package and repo.
 6. Refreshes firmware metadata from LVFS (fwupd) — **report only**, nothing is flashed.
-7. Prints a **SUMMARY** block: versions (including Codex CLI, LocalSend, GSConnect version/state, UxPlay, avahi, ChatGPT, UFW status, Secure Boot state), available firmware updates, pending upgrades, whether a reboot is needed, apt sources, packages with no repo, the log path, and any failed steps.
+7. Prints a **SUMMARY** block: versions (including Codex CLI, LocalSend, GSConnect version/state, UxPlay, avahi, ChatGPT, UFW status, Secure Boot state, memory/swap/pressure), available firmware updates, pending upgrades, whether a reboot is needed, apt sources, packages with no repo, the log path, and any failed steps.
 
 Notes:
 - "Not upgrading yet due to phasing" is normal: Ubuntu rolls some updates out gradually.
