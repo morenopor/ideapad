@@ -74,6 +74,10 @@ snap list code >/dev/null 2>&1 || sudo snap install --classic code
 # micro is the default editor (terminal, sudoedit, git).
 sudo update-alternatives --set editor /usr/bin/micro >/dev/null 2>&1
 git config --global core.editor micro
+# Apps no longer used on this laptop: remove them and their repos.
+UNWANTED=$(dpkg-query -W -f='${Package}\n' teamviewer terraform 2>/dev/null)
+[ -n "$UNWANTED" ] && sudo apt -y purge $UNWANTED && sudo apt -y autoremove --purge
+sudo rm -f "$SL"/hashicorp.* "$SL"/teamviewer*
 BRC=~/.bashrc; MARK="# >>> ideapad preferences >>>"
 if ! grep -qF "$MARK" "$BRC"; then
   cat >> "$BRC" <<'RC'
