@@ -1,10 +1,12 @@
 # Lenovo Ideapad Hardware Profile
 
-This document captures the key hardware details for the Lenovo Ideapad development laptop.
+This document captures the key hardware and software details for the Lenovo Ideapad development laptop (hostname `gabe-ubuntu-laptop`).
+
+> **For agents (Claude, Gemini, etc.):** to update and clean this machine, run [`scripts/upkeep.sh`](../scripts/upkeep.sh). That single script is the maintenance procedure — see [Maintenance](#maintenance). Don't hand the user a series of separate commands; extend the script instead.
 
 ## CPU
 - **Model:** Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz (8 threads, 4 cores)
-- **Architecture:** x86_64 (supports 32-bit and 64-bit modes)
+- **Architecture:** x86_64 / amd64 — always download **linux x64** builds, never arm64
 - **Base/Max Frequency:** 1.60 GHz base, up to 3.40 GHz boost
 - **Virtualization:** Intel VT-x
 - **Instruction Extensions:** SSE up to SSE4.2, AVX, AVX2, AES, FMA, BMI1/BMI2, and more (see `Flags`)
@@ -16,11 +18,11 @@ This document captures the key hardware details for the Lenovo Ideapad developme
 - **Mitigations:** CPU microcode mitigations in place for vulnerabilities including Spectre, Meltdown, L1TF, MDS, Retbleed, and more.
 
 ## Memory
-- **Installed Modules:** 4 GB + 16 GB (total 20 GB)
+- **Installed Modules:** 4 GB + 16 GB (total 20 GB; `free -h` reports ~18 GiB usable)
 
 ## Graphics
 - **Integrated GPU:** Intel UHD Graphics 620 (i915 driver)
-- **Discrete GPU:** NVIDIA GeForce GTX 1050 Mobile (nvidia driver)
+- **Discrete GPU:** NVIDIA GeForce GTX 1050 Mobile (nvidia driver 580.178.04, from the Ubuntu archive)
 
 ## Storage
 - **NVMe SSD:** Kingston A2000 500 GB (model `KINGSTON SA2000M8500G`)
@@ -30,6 +32,95 @@ This document captures the key hardware details for the Lenovo Ideapad developme
 - **Wireless:** Qualcomm Atheros QCA9377 802.11ac (ath10k_pci driver)
 
 ## Software
-- **Kernel:** 6.8.0-60-generic
-- **Distribution:** Ubuntu 24.04.2 LTS (Noble) with GNOME desktop
+_Last verified: 2026-10-07_
 
+- **Distribution:** Ubuntu 26.04.1 LTS (Resolute Raccoon), upgraded from 24.04 (Noble); GNOME 50 on Wayland
+- **Kernel:** 7.0.0-38-generic
+- **Node.js:** 22.22.1 and npm 9.2.0 — both from the Ubuntu archive (`nodejs`, `npm`); NodeSource is **not** used (its leftover repo file is deleted)
+- **Gemini CLI:** 0.63.0 — global npm package `@google/gemini-cli` in `/usr/lib/node_modules`
+- **Antigravity CLI (`agy`):** 1.3.1 in `~/.local/bin/agy` — self-updates in the background
+- **Antigravity (agent manager):** 2.21.1 in `/opt/antigravity` (`antigravity-app`) — tarball install, see [Antigravity 2.x](#antigravity-2x)
+- **Antigravity IDE:** 2.5.5 in `/opt/antigravity-ide` (`antigravity-ide`) — tarball install. The old apt package (1.23.2, the last one that repo published) and its repo were removed
+- **Visual Studio Code:** 1.141.0 (classic snap)
+- **ChatGPT desktop:** 26.1002.52244 — installed from the official amd64 `.deb`, which registers its own apt repo (`chatgpt.sources`), so it updates with apt; executable `/usr/bin/chatgpt`
+- **Codex CLI:** 0.161.0 — user-level **standalone** install (`~/.codex/packages/standalone/releases/…`, command linked from `~/.local/bin/codex`), not npm. It does not self-update; `upkeep.sh` runs `codex update` at most once a week (verified working 2026-10-07). To reinstall: `curl -fsSL https://chatgpt.com/codex/install.sh | sh`
+
+### Preferred apps
+Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), section 4), adjusted for Ubuntu 26.04 — `upkeep.sh` installs anything missing:
+
+| Purpose | Tools |
+|---|---|
+| CLI editor (default `EDITOR`, `editor` alternative, git) | `micro` |
+| Files / disk | `eza` (replaces `exa`; aliased as `ls`/`ll`/`la`), `ncdu`, `tree` |
+| Monitoring / system info | `btop`, `htop`, `fastfetch` (replaces `neofetch`, which Ubuntu dropped; aliased as `neofetch`) |
+| Networking | `nmap`, `whois`, `netcat-openbsd`, `lynx` |
+| Utilities | `tealdeer` (provides `tldr`; replaces the dropped `tldr`/`tldr-hs`), `jq`, `git`, `curl`, `wget`, `rsync` |
+| Markdown / code editor | Visual Studio Code as the **classic snap** (`snap install --classic code`), not the old `.deb` |
+
+Shell preferences live in a marked block in `~/.bashrc` (`# >>> ideapad preferences >>>`). Ubuntu Studio packages and `easyeffects` from the iMac profile are **not** installed here (this laptop runs stock GNOME).
+
+**No longer used** (removed by `upkeep.sh`, together with their repos): `teamviewer`, `terraform`.
+
+### iPhone / LAN integration
+_Verified 2026-10-07._ `upkeep.sh` keeps these installed using their original install method:
+
+| Component | Version | Install method | Purpose |
+|---|---|---|---|
+| LocalSend | 1.18.2 | **User-level** Flatpak from Flathub (`org.localsend.localsend_app`) | Send files and text between Ubuntu and the iPhone over the LAN |
+| GSConnect | 73 (enabled, active) | **User-scoped** GNOME Shell extension (`gsconnect@andyholmes.github.io`) | Integrates with KDE Connect on the iPhone. Do **not** install the `kdeconnect` desktop package alongside it |
+| UxPlay | 1.73.2-1 | APT (`uxplay`) | AirPlay screen and audio mirroring from the iPhone |
+| avahi-daemon | 0.8-18ubuntu1.1 | APT, service active | mDNS / local service discovery (needed by UxPlay) |
+
+**Custom AirPlay launcher** (created by `upkeep.sh` only if missing; existing files are never overwritten):
+- Script: `~/.local/bin/gabe-iphone-airplay`
+- Desktop entry: `~/.local/share/applications/gabe-iphone-airplay.desktop` — app name **iPhone AirPlay**
+- Receiver name: **Gabe Lenovo**
+- Command: `uxplay -n 'Gabe Lenovo' -p 35000 -pin -avdec` — PIN authentication, software video decoding, fixed TCP/UDP ports 35000–35002
+
+**Firewall:** UFW is inactive; no rules were added. If UFW is ever enabled, allow TCP/UDP 35000–35002 and mDNS (UDP 5353) from the LAN for AirPlay, plus LocalSend (TCP/UDP 53317) and GSConnect/KDE Connect (TCP/UDP 1714–1764).
+
+**Still unverified:** actual iPhone pairing and compatibility with iOS 27.2 beta 3. (GSConnect 73 confirmed enabled and active on 2026-10-07.)
+
+### APT sources (`/etc/apt/sources.list.d/`)
+| File | Purpose |
+|---|---|
+| `ubuntu.sources`, `ubuntu-esm-*.sources` | Ubuntu archive + ESM |
+| `claude-desktop.sources` | Claude desktop app |
+| `chatgpt.sources` | ChatGPT desktop (added by its official `.deb`) |
+
+Release upgrades rename third-party repos to `*.list.disabled` **and** comment out their `deb` lines; `upkeep.sh` re-enables the known ones (currently Claude Desktop and ChatGPT).
+
+## Antigravity 2.x
+Google ships Antigravity 2.x on Linux only as tarballs from <https://antigravity.google/download> (pick **linux x64**). It is split into two products:
+
+| Download | Installs to | Command |
+|---|---|---|
+| `Antigravity.tar.gz` (agent manager app) | `/opt/antigravity` | `antigravity-app` |
+| `Antigravity IDE.tar.gz` (editor) | `/opt/antigravity-ide` | `antigravity-ide` |
+
+To install or update: save the tarball(s) in `~/Downloads` and run `upkeep.sh`. It backs up `~/.antigravity` first (2.x does not migrate old conversations/workspaces), installs into `/opt`, fixes `chrome-sandbox`, and creates a launcher. If the old 1.x apt package is still around, the script purges it together with its repo and signing key once the 2.x IDE is installed. Updates are manual: download the new tarball and re-run the script.
+
+## Maintenance
+**One command updates and cleans everything:**
+
+```bash
+bash scripts/upkeep.sh           # update + clean + summary
+bash scripts/upkeep.sh --check   # summary only, changes nothing (use this first when diagnosing)
+```
+
+Every run is logged automatically to `~/.local/state/upkeep/upkeep-<date-time>.log` (the 10 newest are kept), so there is no need to pipe through `tee`. Run it from the GNOME desktop session (the GSConnect step talks to GNOME Shell). The sudo ticket is kept alive for the whole run, and a step that fails does not stop the rest: failures are listed at the end of the summary.
+
+What it does (idempotent — safe to re-run):
+1. Re-enables third-party apt repos disabled by a release upgrade, removes leftover PPAs for older releases, migrates `.list` files to deb822 `.sources`, and de-duplicates repeated entries.
+2. `apt full-upgrade`, `snap refresh`, `npm update -g` (keeps Gemini CLI current and reinstalls it if missing), `codex update` at most once a week (Codex CLI standalone install; if Codex is missing the script prints the reinstall command instead of installing the npm package). Removes the apt `.bak` leftovers and the unused NodeSource repo file.
+3. Purges old kernels from previous releases (never the running one), lets `autoremove` drop obsolete libraries, `autoclean`; keeps 2 revisions per snap and removes disabled ones; trims the systemd journal to 4 weeks; keeps only the 2 newest `~/antigravity-backup-*` folders. Unused user Flatpak runtimes are removed after the LocalSend update.
+4. Installs any missing [preferred apps](#preferred-apps), swaps obsolete tools for their replacements, moves VS Code to the snap, and sets `micro` as the default editor.
+   It also keeps the [iPhone / LAN integration](#iphone--lan-integration) baseline: installs missing `uxplay`/`avahi-daemon`/`flatpak`, keeps avahi running, installs/updates LocalSend as a user Flatpak, asks GNOME Shell to install GSConnect if it is missing, reinstalls ChatGPT desktop from the official `.deb` in `~/Downloads` if it is missing (or newer than the installed one; normal updates come through its apt repo), and recreates the AirPlay launcher if it was deleted.
+5. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged) and removes the old 1.x apt package and repo.
+6. Refreshes firmware metadata from LVFS (fwupd) — **report only**, nothing is flashed.
+7. Prints a **SUMMARY** block: versions (including Codex CLI, LocalSend, GSConnect version/state, UxPlay, avahi, ChatGPT, UFW status), available firmware updates, pending upgrades, whether a reboot is needed, apt sources, packages with no repo (ChatGPT is filtered out), the log path, and any failed steps.
+
+Notes:
+- "Not upgrading yet due to phasing" is normal: Ubuntu rolls some updates out gradually.
+- Firmware updates listed in the summary (BIOS, SSD) are applied manually with `fwupdmgr update`, on AC power, after reading the release notes.
+- Packages listed under "no repo" need a human decision. As of 2026-10-07 none are expected: `code`, `neofetch` and `tldr` are replaced by the preferred-apps step, and `teamviewer`/`terraform` are removed. `libpcre3`/`policykit-1` may linger while something still depends on them — that is fine.
