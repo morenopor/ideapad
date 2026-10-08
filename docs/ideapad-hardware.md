@@ -108,7 +108,12 @@ bash scripts/upkeep.sh           # update + clean + summary
 bash scripts/upkeep.sh --check   # summary only, changes nothing (use this first when diagnosing)
 ```
 
-Every run is logged automatically to `~/.local/state/upkeep/upkeep-<date-time>.log` (the 10 newest are kept), so there is no need to pipe through `tee`. Run it from the GNOME desktop session (the GSConnect step talks to GNOME Shell). The sudo ticket is kept alive for the whole run, and a step that fails does not stop the rest: failures are listed at the end of the summary.
+Every maintenance run is logged automatically to `~/.local/state/upkeep/upkeep-<date-time>-<pid>.log` (private: files 600, directory 700; the 10 newest are kept), so there is no need to pipe through `tee`. `--check` creates no log or state at all. Run it as your normal user from the GNOME desktop session (it refuses to run as root, and the GSConnect step talks to GNOME Shell).
+
+Behaviour and exit codes:
+- Unknown options are rejected (exit 2); `--help` prints usage. A second run while one is active is refused (exit 3, `flock`).
+- The sudo ticket is kept alive for the whole run. A step that fails does not stop the rest; failed steps are listed at the end and the script exits **1**. Exception: if `apt update` fails (`APT::Update::Error-Mode=any`, so partial index downloads count as failure) the run stops before `full-upgrade` and cleanup.
+- Summary queries that fail print `UNKNOWN (…)` instead of an empty value; they are diagnostics and do not change the exit code. The summary also shows the Secure Boot state (`mokutil --sb-state`).
 
 What it does (idempotent — safe to re-run):
 1. Re-enables third-party apt repos disabled by a release upgrade, removes leftover PPAs for older releases, migrates `.list` files to deb822 `.sources`, and de-duplicates repeated entries.
@@ -118,7 +123,7 @@ What it does (idempotent — safe to re-run):
    It also keeps the [iPhone / LAN integration](#iphone--lan-integration) baseline: installs missing `uxplay`/`avahi-daemon`/`flatpak`, keeps avahi running, installs/updates LocalSend as a user Flatpak, asks GNOME Shell to install GSConnect if it is missing, reinstalls ChatGPT desktop from the official `.deb` in `~/Downloads` if it is missing (or newer than the installed one; normal updates come through its apt repo), and recreates the AirPlay launcher if it was deleted.
 5. Installs/updates Antigravity 2.x from tarballs in `~/Downloads` (skips if unchanged) and removes the old 1.x apt package and repo.
 6. Refreshes firmware metadata from LVFS (fwupd) — **report only**, nothing is flashed.
-7. Prints a **SUMMARY** block: versions (including Codex CLI, LocalSend, GSConnect version/state, UxPlay, avahi, ChatGPT, UFW status), available firmware updates, pending upgrades, whether a reboot is needed, apt sources, packages with no repo (ChatGPT is filtered out), the log path, and any failed steps.
+7. Prints a **SUMMARY** block: versions (including Codex CLI, LocalSend, GSConnect version/state, UxPlay, avahi, ChatGPT, UFW status, Secure Boot state), available firmware updates, pending upgrades, whether a reboot is needed, apt sources, packages with no repo, the log path, and any failed steps.
 
 Notes:
 - "Not upgrading yet due to phasing" is normal: Ubuntu rolls some updates out gradually.
