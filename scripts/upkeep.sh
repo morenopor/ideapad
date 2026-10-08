@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# upkeep.sh — update and clean the Lenovo Ideapad (Ubuntu 26.04 LTS).
+# Safe to re-run: each step is idempotent and skips itself when there is nothing to do.
+#
+# Usage:
+#   bash scripts/upkeep.sh 2>&1 | tee ~/upkeep-$(date +%F).log
+#
+# Optional: drop the Antigravity tarballs in ~/Downloads before running
+#   - Antigravity.tar.gz      (Antigravity 2.x agent app)  -> /opt/antigravity      (cmd: antigravity-app)
+#   - Antigravity IDE.tar.gz  (Antigravity IDE 2.x)        -> /opt/antigravity-ide  (cmd: antigravity-ide)
+# Always pick the linux x64 build (this laptop is amd64). A tarball is only reinstalled if it changed.
+set -u
+SL=/etc/apt/sources.list.d
+say(){ echo -e "\n=== $* ==="; }
+sudo -v || exit 1
+
+say "APT sources"
+# Ubuntu disables third-party repos on release upgrades: re-enable known ones.
+for name in antigravity claude-desktop; do
+  if [ -f "$SL/$name.list.disabled" ]; then
+    sudo mv "$SL/$name.list.disabled" "$SL/$name.list"
+    sudo sed -i 's/^#\s*deb /deb /' "$SL/$name.list"
+    echo "re-enabled $name"
+  fi
+done
+# Leftover PPA for an older release (e.g. jammy) — drop it unless the NVIDIA driver comes from it.
+for f in "$SL"/graphics-drivers-ubuntu-ppa-*.sources; do
+  [ -e "$f" ] || continue
+  case "$f" in *"$(lsb_release -cs)"*) continue;; esac
+  if apt-cache policy 'nvidia-driver-*' 2>/dev/null | grep -q launchpad; then
+    echo "KEEP $f (NVIDIA driver installed from PPA)"
+  else sudo rm "$f"; echo "removed $f"; fi
+done
+# Convert any remaining one-line .list files to deb822 .sources.
+ls "$SL"/*.list >/dev/null 2>&1 && sudo apt -y modernize-sources
+# A .sources file with the same repo twice triggers "configured multiple times": keep the first stanza.
+for f in "$SL"/*.sources; do
+  n=$(grep -c '^URIs:' "$f")
+  if [ "$n" -gt 1 ] && [ "$(grep '^URIs:' "$f" | sort -u | wc -l)" -eq 1 ]; then
+    sudo cp "$f" "$f.dup.bak"
+    awk 'BEGIN{RS="";ORS="\n"} NR==1' "$f.dup.bak" | sudo tee "$f" >/dev/null
+    echo "deduplicated $f"
+  fi
+done
+
+say "System update"
+sudo apt update
+sudo DEBIAN_FRONTEND=noninteractive apt -y full-upgrade
+sudo snap refresh
+command -v npm >/dev/null && sudo npm update -g
+
+say "Cleanup"
+# Old kernels left from previous releases (no longer in any repo); never touches the running one.
+OLDK=$(apt list '?narrow(?installed, ?obsolete, ?name(^linux-))' 2>/dev/null | cut -d/ -f1 | grep -v Listing | grep -v -- "$(uname -r)")
+[ -n "$OLDK" ] && sudo apt -y purge $OLDK
+# Obsolete libraries / transitional packages: mark as auto so autoremove drops them only if nothing needs them.
+OLDLIB=$(apt list '?narrow(?installed, ?obsolete, ?or(?name(^lib), ?name(^policykit-1$)))' 2>/dev/null | cut -d/ -f1 | grep -v Listing)
+[ -n "$OLDLIB" ] && sudo apt-mark auto $OLDLIB >/dev/null
+sudo apt -y autoremove --purge
+sudo apt -y autoclean
+
+install_tarball(){ # $1=tarball $2=dest $3=command $4=desktop-name
+  local tb="$1" dest="$2" cmd="$3" label="$4" sum t s bin icon
+  sum=$(sha256sum "$tb" | cut -d' ' -f1)
+  if [ "$(cat "$dest/.tarball.sha256" 2>/dev/null)" = "$sum" ]; then echo "$label already up to date"; return; fi
+  [ -d ~/.antigravity ] && [ ! -d ~/antigravity-backup-$(date +%F) ] && cp -a ~/.antigravity ~/antigravity-backup-$(date +%F)
+  t=$(mktemp -d); tar -xzf "$tb" -C "$t"; s="$t"
+  [ "$(ls -A "$t" | wc -l)" -eq 1 ] && [ -d "$t"/* ] && s=$(echo "$t"/*)
+  sudo rm -rf "$dest" && sudo mkdir -p "$dest" && sudo cp -a "$s"/. "$dest"/ && rm -rf "$t"
+  [ -f "$dest/chrome-sandbox" ] && sudo chown root:root "$dest/chrome-sandbox" && sudo chmod 4755 "$dest/chrome-sandbox"
+  bin=$(find "$dest" -maxdepth 2 -type f -executable -iname 'antigravity*' ! -name '*.so*' | head -1)
+  icon=$(find "$dest" -iname '*.png' | grep -i -m1 -E 'antigravity|code|icon')
+  if [ -z "$bin" ]; then echo "$label: executable not found, contents:"; ls "$dest"; return; fi
+  sudo ln -sf "$bin" "/usr/local/bin/$cmd"
+  mkdir -p ~/.local/share/applications
+  cat > ~/.local/share/applications/$cmd.desktop <<DESK
+[Desktop Entry]
+Name=$label
+Exec=/usr/local/bin/$cmd %F
+Icon=${icon:-utilities-terminal}
+Type=Application
+Categories=Development;IDE;
+DESK
+  update-desktop-database ~/.local/share/applications 2>/dev/null
+  echo "$sum" | sudo tee "$dest/.tarball.sha256" >/dev/null
+  echo "$label installed: $bin"
+}
+
+say "Antigravity 2.x (tarballs)"
+AG=$(find ~/Downloads -maxdepth 1 -iname 'antigravity*.tar.gz' ! -iname '*ide*' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+IDE=$(find ~/Downloads -maxdepth 1 -iname 'antigravity*ide*.tar.gz' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+if [ -n "$AG" ]; then install_tarball "$AG" /opt/antigravity antigravity-app "Antigravity"; else echo "no Antigravity.tar.gz in ~/Downloads"; fi
+if [ -n "$IDE" ]; then install_tarball "$IDE" /opt/antigravity-ide antigravity-ide "Antigravity IDE"; else echo "no 'Antigravity IDE.tar.gz' in ~/Downloads"; fi
+command -v agy >/dev/null || echo "agy CLI missing: curl -fsSL https://antigravity.google/cli/install.sh | bash"
+
+ver(){ local v; v=$(grep -m1 '"version"' "$1/resources/app/package.json" 2>/dev/null | sed 's/[^0-9.]//g'); echo "${v:-n/a}"; }
+say "SUMMARY"
+lsb_release -ds; uname -r
+echo "gemini:          $(gemini --version 2>/dev/null)"
+echo "agy:             $(agy --version 2>/dev/null | head -1)"
+echo "antigravity apt: $(dpkg-query -W -f='${Version}' antigravity 2>/dev/null || echo n/a)"
+echo "antigravity 2.x: $(ver /opt/antigravity)"
+echo "antigravity-ide: $(ver /opt/antigravity-ide)"
+echo "node: $(node -v 2>/dev/null)  npm: $(npm -v 2>/dev/null)"
+echo "nvidia: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo n/a)"
+echo "pending upgrades: $(apt list --upgradable 2>/dev/null | grep -c upgradable) (phased updates are normal)"
+echo "reboot required: $([ -f /var/run/reboot-required ] && echo YES || echo no)"
+echo "-- apt sources:"; ls "$SL"
+echo "-- installed packages with no repo (review manually):"
+apt list '?narrow(?installed, ?obsolete)' 2>/dev/null | grep -v Listing
