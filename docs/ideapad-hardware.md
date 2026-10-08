@@ -43,7 +43,7 @@ _Last verified: 2026-10-07_
 - **Antigravity IDE:** 2.5.5 in `/opt/antigravity-ide` (`antigravity-ide`) — tarball install. The old apt package (1.23.2, the last one that repo published) and its repo were removed
 - **Visual Studio Code:** 1.141.0 (classic snap)
 - **ChatGPT desktop:** 26.1002.52244 — installed from the official amd64 `.deb`, which registers its own apt repo (`chatgpt.sources`), so it updates with apt; executable `/usr/bin/chatgpt`
-- **Codex CLI:** installed (`codex`). `upkeep.sh` treats it like Gemini CLI — a global npm package (`@openai/codex`) kept current by `npm update -g`; the summary prints its version and real install path (verify the path is under `/usr/lib/node_modules`)
+- **Codex CLI:** 0.161.0 — user-level **standalone** install (`~/.codex/packages/standalone/releases/…`, command linked from `~/.local/bin/codex`), not npm. It does not self-update; `upkeep.sh` runs `codex update`. To reinstall: `curl -fsSL https://chatgpt.com/codex/install.sh | sh`
 
 ### Preferred apps
 Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), section 4), adjusted for Ubuntu 26.04 — `upkeep.sh` installs anything missing:
@@ -110,7 +110,7 @@ bash scripts/upkeep.sh 2>&1 | tee ~/upkeep-$(date +%F).log
 
 What it does (idempotent — safe to re-run):
 1. Re-enables third-party apt repos disabled by a release upgrade, removes leftover PPAs for older releases, migrates `.list` files to deb822 `.sources`, and de-duplicates repeated entries.
-2. `apt full-upgrade`, `snap refresh`, `npm update -g` (keeps Gemini CLI and Codex CLI current, and reinstalls either one if it is missing).
+2. `apt full-upgrade`, `snap refresh`, `npm update -g` (keeps Gemini CLI current and reinstalls it if missing), `codex update` (Codex CLI standalone install; if Codex is missing the script prints the reinstall command instead of installing the npm package).
 3. Purges old kernels from previous releases (never the running one), lets `autoremove` drop obsolete libraries, `autoclean`.
 4. Installs any missing [preferred apps](#preferred-apps), swaps obsolete tools for their replacements, moves VS Code to the snap, and sets `micro` as the default editor.
    It also keeps the [iPhone / LAN integration](#iphone--lan-integration) baseline: installs missing `uxplay`/`avahi-daemon`/`flatpak`, keeps avahi running, installs/updates LocalSend as a user Flatpak, asks GNOME Shell to install GSConnect if it is missing, reinstalls ChatGPT desktop from the official `.deb` in `~/Downloads` if it is missing (or newer than the installed one; normal updates come through its apt repo), and recreates the AirPlay launcher if it was deleted.
