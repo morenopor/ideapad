@@ -5,22 +5,43 @@
 # Usage:
 #   bash scripts/upkeep.sh           # update + clean + summary (log saved to ~/.local/state/upkeep/, last 10 kept)
 #   bash scripts/upkeep.sh --check   # summary only, changes nothing
+#   bash scripts/upkeep.sh --force   # run even if memory is low (see the memory guard below)
 #
 # Optional: drop the Antigravity tarballs in ~/Downloads before running
 #   - Antigravity.tar.gz      (Antigravity 2.x agent app)  -> /opt/antigravity      (cmd: antigravity-app)
 #   - Antigravity IDE.tar.gz  (Antigravity IDE 2.x)        -> /opt/antigravity-ide  (cmd: antigravity-ide)
 # Always pick the linux x64 build (this laptop is amd64). A tarball is only reinstalled if it changed.
 set -u
-CHECK=0
-usage(){ printf '%s\n' 'Usage: bash scripts/upkeep.sh [--check | --help]'; }
+CHECK=0; FORCE=0
+usage(){ printf '%s\n' 'Usage: bash scripts/upkeep.sh [--check | --force | --help]'; }
 for arg in "$@"; do
   case "$arg" in
     --check) CHECK=1;;
+    --force) FORCE=1;;
     --help|-h) usage; exit 0;;
     *) printf 'Unknown option: %s\n' "$arg" >&2; usage >&2; exit 2;;
   esac
 done
 (( EUID != 0 )) || { echo 'Run as your desktop user, not root.' >&2; exit 2; }
+# Memory guard. On 2026-10-08 systemd-oomd killed gnome-shell (and with it the terminal running
+# this script) because the desktop session was at ~17 of 18 GB with only 2 GB of swap.
+# Refuse to start when RAM is already tight; close apps/terminal tabs or pass --force.
+MIN_AVAIL_MB=2048 MAX_PSI10=20
+mem_status(){
+  local avail swapfree psi
+  avail=$(awk '/^MemAvailable:/{print int($2/1024)}' /proc/meminfo)
+  swapfree=$(awk '/^SwapFree:/{print int($2/1024)}' /proc/meminfo)
+  psi=$(awk '/^some/{split($2,a,"=");print int(a[2])}' /proc/pressure/memory 2>/dev/null || echo 0)
+  printf '%s %s %s\n' "${avail:-0}" "${swapfree:-0}" "${psi:-0}"
+}
+read -r MEM_AVAIL SWAP_FREE MEM_PSI < <(mem_status)
+if (( ! CHECK && ! FORCE )) && (( MEM_AVAIL < MIN_AVAIL_MB || MEM_PSI > MAX_PSI10 )); then
+  printf 'Low memory: %s MB available (min %s), %s MB swap free, memory pressure avg10 %s%% (max %s%%).\n' \
+    "$MEM_AVAIL" "$MIN_AVAIL_MB" "$SWAP_FREE" "$MEM_PSI" "$MAX_PSI10" >&2
+  echo 'Close browsers/agents/terminal tabs and retry, or re-run with --force. Top memory users:' >&2
+  ps -eo rss=,comm= --sort=-rss | head -8 | awk '{printf "  %6.0f MB  %s\n",$1/1024,$2}' >&2
+  exit 4
+fi
 SL=/etc/apt/sources.list.d
 STATE=~/.local/state/upkeep
 LOG='not created (--check)'
@@ -154,18 +175,24 @@ run git config --global core.editor micro
 UNWANTED=$(installed teamviewer terraform)
 [ -n "$UNWANTED" ] && run sudo apt -y purge $UNWANTED && run sudo apt -y autoremove --purge
 run sudo rm -f "$SL"/hashicorp.* "$SL"/teamviewer*
-BRC=~/.bashrc; MARK="# >>> ideapad preferences >>>"
-if ! grep -qF "$MARK" "$BRC"; then
-  run cat >> "$BRC" <<'RC'
+BRC=~/.bashrc; MARK="# >>> ideapad preferences >>>"; MARK_END="# <<< ideapad preferences <<<"
+# The block is rewritten on every run so changes here reach ~/.bashrc. `ls` stays GNU ls on purpose:
+# aliasing it to eza broke `ls -lt` (eza's -t takes a field name). Use ll / la for eza.
+BRC_BLOCK=$(cat <<'RC'
 # >>> ideapad preferences >>>
 export EDITOR=micro VISUAL=micro
-alias ls='eza --group-directories-first'
 alias ll='eza -lh --git --group-directories-first'
 alias la='eza -lah --git --group-directories-first'
 alias neofetch='fastfetch'
 # <<< ideapad preferences <<<
 RC
-  echo "preferences added to ~/.bashrc (open a new terminal)"
+)
+CUR_BLOCK=$(sed -n "\|^$MARK\$|,\|^$MARK_END\$|p" "$BRC" 2>/dev/null)
+if [ "$CUR_BLOCK" != "$BRC_BLOCK" ]; then
+  [ -f "$BRC" ] && run cp -p "$BRC" "$BRC.upkeep-bak"
+  run sed -i "\|^$MARK\$|,\|^$MARK_END\$|d" "$BRC"
+  printf '%s\n' "$BRC_BLOCK" >> "$BRC"
+  echo "updated the preferences block in ~/.bashrc (backup: ~/.bashrc.upkeep-bak; open a new terminal)"
 fi
 
 say "iPhone / LAN integration"
@@ -317,6 +344,8 @@ elif [ "$rc" -eq 0 ]; then
 else printf '%-17s UNKNOWN (fwupd exit %s)\n' 'firmware:' "$rc"; fi
 query nvidia nvidia-smi --query-gpu=driver_version --format=csv,noheader
 printf '%-17s %s\n' 'pending upgrades:' "$(apt list --upgradable 2>/dev/null | grep -c upgradable) (check 'apt list --upgradable'; phased updates are normal)"
+read -r MEM_AVAIL SWAP_FREE MEM_PSI < <(mem_status)
+printf '%-17s %s\n' 'memory:' "${MEM_AVAIL} MB available, ${SWAP_FREE} MB swap free, pressure avg10 ${MEM_PSI}%"
 printf '%-17s %s\n' 'reboot required:' "$([ -f /var/run/reboot-required ] && echo YES || echo no)"
 echo '-- apt sources:'; ls "$SL"
 echo '-- installed packages with no repo (review manually):'
