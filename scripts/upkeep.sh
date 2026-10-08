@@ -48,9 +48,15 @@ sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt -y full-upgrade
 sudo snap refresh
 command -v npm >/dev/null && sudo npm update -g
-# AI CLIs installed as global npm packages (kept current by the npm update above).
+# Gemini CLI: global npm package (kept current by the npm update above).
 command -v gemini >/dev/null || sudo npm install -g @google/gemini-cli
-command -v codex >/dev/null || sudo npm install -g @openai/codex
+# Codex CLI: user-level standalone install (~/.codex/packages/standalone, command in ~/.local/bin). It does not
+# self-update, so ask it to; never install the npm package on top of it.
+if command -v codex >/dev/null; then
+  codex update </dev/null || echo "codex update failed; re-run the standalone installer (curl -fsSL https://chatgpt.com/codex/install.sh | sh)"
+else
+  echo "Codex CLI missing: reinstall with: curl -fsSL https://chatgpt.com/codex/install.sh | sh"
+fi
 # Backups left by modernize-sources / de-duplication are no longer needed once apt update has succeeded.
 sudo rm -f "$SL"/*.list.bak "$SL"/*.dup.bak
 
