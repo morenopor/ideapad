@@ -59,6 +59,35 @@ OLDLIB=$(apt list '?narrow(?installed, ?obsolete, ?or(?name(^lib), ?name(^policy
 sudo apt -y autoremove --purge
 sudo apt -y autoclean
 
+say "Preferred apps (same toolset as the iMac)"
+# CLI toolset. Ubuntu dropped exa/neofetch/tldr: eza, fastfetch and tealdeer replace them.
+APPS="micro eza ncdu tree btop htop fastfetch nmap whois netcat-openbsd lynx tealdeer jq git curl wget rsync"
+MISSING=$(for p in $APPS; do dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "ok installed" || echo "$p"; done)
+# Remove the obsolete predecessors first (tealdeer conflicts with the old tldr packages).
+OLDTOOLS=$(dpkg-query -W -f='${Package}\n' neofetch tldr tldr-hs exa 2>/dev/null)
+[ -n "$OLDTOOLS" ] && sudo apt -y purge $OLDTOOLS
+if [ -n "$MISSING" ]; then sudo apt -y install $MISSING; else echo "all CLI tools present"; fi
+command -v tldr >/dev/null && tldr --update >/dev/null 2>&1
+# VS Code: preferred as the classic snap (the old .deb has no repo and stopped updating).
+if dpkg-query -W -f='${Status}' code 2>/dev/null | grep -q "ok installed"; then sudo apt -y purge code; fi
+snap list code >/dev/null 2>&1 || sudo snap install --classic code
+# micro is the default editor (terminal, sudoedit, git).
+sudo update-alternatives --set editor /usr/bin/micro >/dev/null 2>&1
+git config --global core.editor micro
+BRC=~/.bashrc; MARK="# >>> ideapad preferences >>>"
+if ! grep -qF "$MARK" "$BRC"; then
+  cat >> "$BRC" <<'RC'
+# >>> ideapad preferences >>>
+export EDITOR=micro VISUAL=micro
+alias ls='eza --group-directories-first'
+alias ll='eza -lh --git --group-directories-first'
+alias la='eza -lah --git --group-directories-first'
+alias neofetch='fastfetch'
+# <<< ideapad preferences <<<
+RC
+  echo "preferences added to ~/.bashrc (open a new terminal)"
+fi
+
 install_tarball(){ # $1=tarball $2=dest $3=command $4=desktop-name
   local tb="$1" dest="$2" cmd="$3" label="$4" sum t s bin icon
   sum=$(sha256sum "$tb" | cut -d' ' -f1)
@@ -102,6 +131,8 @@ echo "antigravity apt: $(dpkg-query -W -f='${Version}' antigravity 2>/dev/null |
 echo "antigravity 2.x: $(ver /opt/antigravity)"
 echo "antigravity-ide: $(ver /opt/antigravity-ide)"
 echo "node: $(node -v 2>/dev/null)  npm: $(npm -v 2>/dev/null)"
+echo "vscode (snap):   $(snap list code 2>/dev/null | awk 'NR==2{print $2}')"
+echo "editor:          $(readlink -f /usr/bin/editor)"
 echo "nvidia: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo n/a)"
 echo "pending upgrades: $(apt list --upgradable 2>/dev/null | grep -c upgradable) (phased updates are normal)"
 echo "reboot required: $([ -f /var/run/reboot-required ] && echo YES || echo no)"
