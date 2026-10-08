@@ -55,13 +55,14 @@ Same toolset as the iMac ([morenopor/imac](https://github.com/morenopor/imac), s
 
 Shell preferences live in a marked block in `~/.bashrc` (`# >>> ideapad preferences >>>`). Ubuntu Studio packages and `easyeffects` from the iMac profile are **not** installed here (this laptop runs stock GNOME).
 
+**No longer used** (removed by `upkeep.sh`, together with their repos): `teamviewer`, `terraform`.
+
 ### APT sources (`/etc/apt/sources.list.d/`)
 | File | Purpose |
 |---|---|
 | `ubuntu.sources`, `ubuntu-esm-*.sources` | Ubuntu archive + ESM |
 | `antigravity.sources` | Antigravity IDE 1.x (frozen at 1.23.2) |
 | `claude-desktop.sources` | Claude desktop app |
-| `hashicorp.list.disabled` | Terraform — disabled by the 26.04 upgrade |
 | `nodesource.list.disabled` | Not used; keep disabled to avoid mixing Node builds |
 
 Release upgrades rename third-party repos to `*.list.disabled` **and** comment out their `deb` lines; `upkeep.sh` re-enables the known ones.
@@ -93,4 +94,4 @@ What it does (idempotent — safe to re-run):
 
 Notes:
 - "Not upgrading yet due to phasing" is normal: Ubuntu rolls some updates out gradually.
-- Packages listed under "no repo" need a human decision. Known ones as of 2026-10-07: `teamviewer`, `terraform` (hashicorp repo disabled). (`code`, `neofetch` and `tldr` are handled by the preferred-apps step.)
+- Packages listed under "no repo" need a human decision. As of 2026-10-07 none are expected: `code`, `neofetch` and `tldr` are replaced by the preferred-apps step, and `teamviewer`/`terraform` are removed. `libpcre3`/`policykit-1` may linger while something still depends on them — that is fine.
