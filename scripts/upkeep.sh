@@ -94,6 +94,56 @@ RC
   echo "preferences added to ~/.bashrc (open a new terminal)"
 fi
 
+say "iPhone / LAN integration"
+# APT: UxPlay (AirPlay receiver), avahi-daemon (mDNS discovery, required by UxPlay), flatpak (for LocalSend).
+LANPKGS="uxplay avahi-daemon flatpak"
+LANMISSING=$(for p in $LANPKGS; do dpkg-query -W -f='${Status}' "$p" 2>/dev/null | grep -q "ok installed" || echo "$p"; done)
+[ -n "$LANMISSING" ] && sudo apt -y install $LANMISSING
+systemctl is-active --quiet avahi-daemon || sudo systemctl enable --now avahi-daemon
+# LocalSend: user-level Flatpak from Flathub (never system-wide).
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak info --user org.localsend.localsend_app >/dev/null 2>&1 || flatpak install --user -y flathub org.localsend.localsend_app
+flatpak update --user -y --noninteractive
+# GSConnect: user-scoped GNOME Shell extension (talks to KDE Connect on the iPhone). Do NOT install the kdeconnect desktop package.
+GSC=gsconnect@andyholmes.github.io
+if ! gnome-extensions info "$GSC" >/dev/null 2>&1; then
+  echo "GSConnect missing: GNOME Shell will ask you to confirm the install from extensions.gnome.org"
+  gdbus call --session --dest org.gnome.Shell.Extensions --object-path /org/gnome/Shell/Extensions \
+    --method org.gnome.Shell.Extensions.InstallRemoteExtension "$GSC" >/dev/null 2>&1 \
+    || echo "could not reach GNOME Shell (run this from a desktop session)"
+fi
+dpkg-query -W -f='${Status}' kdeconnect 2>/dev/null | grep -q "ok installed" && echo "WARNING: kdeconnect package is installed and conflicts with GSConnect"
+# ChatGPT desktop: official amd64 .deb (no apt repo). Installs/updates from ~/Downloads when a newer .deb is there.
+CGDEB=$(find ~/Downloads -maxdepth 1 -iname 'chatgpt*_amd64.deb' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
+CGPKG=$(dpkg -S /usr/bin/chatgpt 2>/dev/null | cut -d: -f1)
+if [ -n "$CGDEB" ]; then
+  NEWV=$(dpkg-deb -f "$CGDEB" Version); CURV=$([ -n "$CGPKG" ] && dpkg-query -W -f='${Version}' "$CGPKG")
+  if [ -z "$CURV" ] || dpkg --compare-versions "$NEWV" gt "$CURV"; then sudo apt -y install "$CGDEB"; fi
+elif [ -z "$CGPKG" ]; then echo "ChatGPT desktop missing: download the official amd64 .deb to ~/Downloads and re-run"; fi
+# Custom AirPlay launcher ("iPhone AirPlay" -> receiver "Gabe Lenovo"). Created only if missing; existing files are kept as-is.
+mkdir -p ~/.local/bin ~/.local/share/applications
+if [ ! -e ~/.local/bin/gabe-iphone-airplay ]; then
+  cat > ~/.local/bin/gabe-iphone-airplay <<'AIR'
+#!/usr/bin/env bash
+# AirPlay receiver for the iPhone: PIN pairing, software video decoding, fixed TCP/UDP ports 35000-35002.
+exec uxplay -n 'Gabe Lenovo' -p 35000 -pin -avdec "$@"
+AIR
+  chmod +x ~/.local/bin/gabe-iphone-airplay; echo "created ~/.local/bin/gabe-iphone-airplay"
+fi
+if [ ! -e ~/.local/share/applications/gabe-iphone-airplay.desktop ]; then
+  cat > ~/.local/share/applications/gabe-iphone-airplay.desktop <<DESK
+[Desktop Entry]
+Name=iPhone AirPlay
+Comment=Receive AirPlay screen and audio from the iPhone (UxPlay)
+Exec=$HOME/.local/bin/gabe-iphone-airplay
+Icon=video-display
+Terminal=false
+Type=Application
+Categories=AudioVideo;Network;
+DESK
+  update-desktop-database ~/.local/share/applications 2>/dev/null; echo "created iPhone AirPlay launcher"
+fi
+
 install_tarball(){ # $1=tarball $2=dest $3=command $4=desktop-name
   local tb="$1" dest="$2" cmd="$3" label="$4" sum t s bin icon
   sum=$(sha256sum "$tb" | cut -d' ' -f1)
@@ -149,9 +199,16 @@ echo "antigravity-ide: $(ver /opt/antigravity-ide)"
 echo "node: $(node -v 2>/dev/null)  npm: $(npm -v 2>/dev/null)"
 echo "vscode (snap):   $(code --version 2>/dev/null | head -1)"
 echo "editor:          $(readlink -f /usr/bin/editor)"
+echo "localsend:       $(flatpak info --user org.localsend.localsend_app 2>/dev/null | awk -F': *' '/Version/{print $2}')"
+echo "gsconnect:       $(gnome-extensions info gsconnect@andyholmes.github.io 2>/dev/null | grep -E 'Version|Enabled|State' | sed 's/^ *//' | paste -sd' ' -)"
+echo "uxplay:          $(dpkg-query -W -f='${Version}' uxplay 2>/dev/null)"
+echo "avahi-daemon:    $(dpkg-query -W -f='${Version}' avahi-daemon 2>/dev/null) ($(systemctl is-active avahi-daemon 2>/dev/null))"
+echo "chatgpt:         $(p=$(dpkg -S /usr/bin/chatgpt 2>/dev/null | cut -d: -f1); [ -n "$p" ] && dpkg-query -W -f='${Version}' "$p")"
+echo "ufw:             $(sudo ufw status 2>/dev/null | head -1)"
 echo "nvidia: $(nvidia-smi --query-gpu=driver_version --format=csv,noheader 2>/dev/null || echo n/a)"
 echo "pending upgrades: $(apt list --upgradable 2>/dev/null | grep -c upgradable) (phased updates are normal)"
 echo "reboot required: $([ -f /var/run/reboot-required ] && echo YES || echo no)"
 echo "-- apt sources:"; ls "$SL"
-echo "-- installed packages with no repo (review manually):"
-apt list '?narrow(?installed, ?obsolete)' 2>/dev/null | grep -v Listing
+echo "-- installed packages with no repo (review manually; the ChatGPT .deb is expected and not listed):"
+CGP=$(dpkg -S /usr/bin/chatgpt 2>/dev/null | cut -d: -f1)
+apt list '?narrow(?installed, ?obsolete)' 2>/dev/null | grep -v Listing | grep -v "^${CGP:-__none__}/"
